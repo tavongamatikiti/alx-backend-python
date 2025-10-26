@@ -11,6 +11,8 @@ class UserSerializer(serializers.ModelSerializer):
     """
     Serializer for the User model.
     """
+    full_name = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = [
@@ -18,12 +20,19 @@ class UserSerializer(serializers.ModelSerializer):
             'username',
             'first_name',
             'last_name',
+            'full_name',
             'email',
             'phone_number',
             'role',
             'created_at'
         ]
         read_only_fields = ['user_id', 'created_at']
+
+    def get_full_name(self, obj):
+        """
+        Returns the user's full name.
+        """
+        return f"{obj.first_name} {obj.last_name}".strip()
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -33,6 +42,7 @@ class MessageSerializer(serializers.ModelSerializer):
     """
     sender = UserSerializer(read_only=True)
     sender_id = serializers.UUIDField(write_only=True)
+    message_preview = serializers.CharField(read_only=True, max_length=50)
 
     class Meta:
         model = Message
@@ -42,9 +52,26 @@ class MessageSerializer(serializers.ModelSerializer):
             'sender_id',
             'conversation',
             'message_body',
+            'message_preview',
             'sent_at'
         ]
         read_only_fields = ['message_id', 'sent_at']
+
+    def validate_message_body(self, value):
+        """
+        Validates that message_body is not empty.
+        """
+        if not value or not value.strip():
+            raise serializers.ValidationError("Message body cannot be empty.")
+        return value
+
+    def to_representation(self, instance):
+        """
+        Add a preview field to the representation.
+        """
+        representation = super().to_representation(instance)
+        representation['message_preview'] = instance.message_body[:50]
+        return representation
 
 
 class ConversationSerializer(serializers.ModelSerializer):
