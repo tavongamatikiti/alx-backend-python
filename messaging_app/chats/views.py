@@ -1,9 +1,9 @@
 """
 Views for the messaging application.
-Implements ViewSets for Conversation and Message models.
+Implements ViewSets for Conversation and Message models with filters.
 """
 
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import User, Conversation, Message
