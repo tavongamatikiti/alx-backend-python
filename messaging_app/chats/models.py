@@ -12,6 +12,12 @@ class User(AbstractUser):
     """
     Custom User model extending Django's AbstractUser.
     Includes additional fields for phone number and role.
+
+    Inherited from AbstractUser:
+    - username
+    - first_name
+    - last_name
+    - password (hashed password field)
     """
     user_id = models.UUIDField(
         primary_key=True,
