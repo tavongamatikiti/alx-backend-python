@@ -1,0 +1,35 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database
+*.sqlite3
+db.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (excluding README.md)
+IMPLEMENTATION_SUMMARY.md
+QUICKSTART.md
+TEST_RESULTS.md
+
+# Temporary files
+/tmp/
+*.log
