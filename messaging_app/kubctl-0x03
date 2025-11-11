@@ -1,0 +1,141 @@
+#!/bin/bash
+# Script for Rolling Update with Zero Downtime Testing
+
+echo "======================================"
+echo "Rolling Update Strategy - Django App"
+echo "======================================"
+
+# Check if kubectl is available
+if ! command -v kubectl &> /dev/null; then
+    echo "❌ Error: kubectl is not installed"
+    exit 1
+fi
+
+# Check if curl is available
+if ! command -v curl &> /dev/null; then
+    echo "❌ Error: curl is not installed"
+    exit 1
+fi
+
+echo ""
+echo "Step 1: Current deployment status..."
+echo "======================================"
+kubectl get deployment django-messaging-blue
+
+echo ""
+echo "Step 2: Applying updated deployment (version 2.0)..."
+echo "======================================"
+kubectl apply -f blue_deployment.yaml
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to apply updated deployment"
+    exit 1
+fi
+
+echo "✅ Deployment configuration applied"
+
+echo ""
+echo "Step 3: Monitoring rollout status..."
+echo "======================================"
+
+# Start monitoring in background
+kubectl rollout status deployment/django-messaging-blue &
+ROLLOUT_PID=$!
+
+echo ""
+echo "Step 4: Testing for downtime during update..."
+echo "======================================"
+
+# Get service URL
+SERVICE_URL=$(minikube service django-service-blue --url 2>/dev/null)
+
+if [ -z "$SERVICE_URL" ]; then
+    echo "⚠️  Could not get service URL automatically"
+    echo "Attempting to use port-forward instead..."
+
+    # Port forward in background
+    kubectl port-forward service/django-service-blue 8080:80 &
+    FORWARD_PID=$!
+    sleep 5
+    SERVICE_URL="http://localhost:8080"
+fi
+
+echo "Testing service at: $SERVICE_URL"
+echo "Sending continuous requests for 60 seconds..."
+echo "Press Ctrl+C to stop early"
+echo ""
+
+# Counter for requests
+SUCCESS_COUNT=0
+FAILURE_COUNT=0
+TOTAL_COUNT=0
+
+# Test endpoint continuously
+END_TIME=$((SECONDS + 60))
+
+while [ $SECONDS -lt $END_TIME ]; do
+    TOTAL_COUNT=$((TOTAL_COUNT + 1))
+
+    # Send request and check response
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/admin/" --max-time 5)
+
+    if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ]; then
+        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+        echo -n "✓"
+    else
+        FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        echo -n "✗"
+    fi
+
+    sleep 1
+done
+
+echo ""
+echo ""
+echo "======================================"
+echo "Downtime Test Results:"
+echo "======================================"
+echo "Total requests: $TOTAL_COUNT"
+echo "Successful requests: $SUCCESS_COUNT"
+echo "Failed requests: $FAILURE_COUNT"
+
+if [ $FAILURE_COUNT -eq 0 ]; then
+    echo "✅ Zero downtime achieved!"
+else
+    DOWNTIME_PERCENT=$(awk "BEGIN {print ($FAILURE_COUNT/$TOTAL_COUNT)*100}")
+    echo "⚠️  Downtime percentage: ${DOWNTIME_PERCENT}%"
+fi
+
+# Wait for rollout to complete
+echo ""
+echo "Step 5: Waiting for rollout to complete..."
+echo "======================================"
+wait $ROLLOUT_PID
+
+echo ""
+echo "Step 6: Verifying rolling update completion..."
+echo "======================================"
+kubectl get deployment django-messaging-blue
+echo ""
+kubectl get pods -l version=blue
+
+echo ""
+echo "Step 7: Checking updated pod details..."
+echo "======================================"
+kubectl describe deployment django-messaging-blue | grep -A 5 "Image:"
+
+echo ""
+echo "Step 8: Rollout history..."
+echo "======================================"
+kubectl rollout history deployment/django-messaging-blue
+
+# Cleanup port-forward if used
+if [ ! -z "$FORWARD_PID" ]; then
+    kill $FORWARD_PID 2>/dev/null
+fi
+
+echo ""
+echo "✅ Rolling update complete!"
+echo ""
+echo "To rollback if needed, run:"
+echo "kubectl rollout undo deployment/django-messaging-blue"
