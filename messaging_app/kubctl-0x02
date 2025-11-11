@@ -1,0 +1,119 @@
+#!/bin/bash
+# Script for Blue-Green Deployment Strategy
+
+echo "======================================"
+echo "Blue-Green Deployment Strategy"
+echo "======================================"
+
+# Check if kubectl is available
+if ! command -v kubectl &> /dev/null; then
+    echo "❌ Error: kubectl is not installed"
+    exit 1
+fi
+
+echo ""
+echo "Step 1: Deploying BLUE version..."
+echo "======================================"
+kubectl apply -f blue_deployment.yaml
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to deploy blue version"
+    exit 1
+fi
+
+echo "✅ Blue deployment applied"
+
+# Wait for blue deployment to be ready
+echo "Waiting for blue pods to be ready..."
+kubectl wait --for=condition=available --timeout=120s deployment/django-messaging-blue
+
+echo ""
+echo "Step 2: Checking BLUE deployment status..."
+echo "======================================"
+kubectl get deployment django-messaging-blue
+kubectl get pods -l version=blue
+
+echo ""
+echo "Step 3: Checking logs for BLUE version..."
+echo "======================================"
+BLUE_POD=$(kubectl get pods -l version=blue -o jsonpath='{.items[0].metadata.name}')
+if [ ! -z "$BLUE_POD" ]; then
+    echo "Logs from blue pod: $BLUE_POD"
+    kubectl logs $BLUE_POD --tail=20
+
+    # Check for errors in logs
+    ERROR_COUNT=$(kubectl logs $BLUE_POD | grep -i "error" | wc -l)
+    if [ $ERROR_COUNT -gt 0 ]; then
+        echo "⚠️  Warning: Found $ERROR_COUNT error(s) in blue deployment logs"
+    else
+        echo "✅ No errors found in blue deployment"
+    fi
+else
+    echo "⚠️  No blue pods found"
+fi
+
+echo ""
+echo "Step 4: Deploying GREEN version..."
+echo "======================================"
+kubectl apply -f green_deployment.yaml
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to deploy green version"
+    exit 1
+fi
+
+echo "✅ Green deployment applied"
+
+# Wait for green deployment to be ready
+echo "Waiting for green pods to be ready..."
+kubectl wait --for=condition=available --timeout=120s deployment/django-messaging-green
+
+echo ""
+echo "Step 5: Checking GREEN deployment status..."
+echo "======================================"
+kubectl get deployment django-messaging-green
+kubectl get pods -l version=green
+
+echo ""
+echo "Step 6: Checking logs for GREEN version..."
+echo "======================================"
+GREEN_POD=$(kubectl get pods -l version=green -o jsonpath='{.items[0].metadata.name}')
+if [ ! -z "$GREEN_POD" ]; then
+    echo "Logs from green pod: $GREEN_POD"
+    kubectl logs $GREEN_POD --tail=20
+
+    # Check for errors in logs
+    ERROR_COUNT=$(kubectl logs $GREEN_POD | grep -i "error" | wc -l)
+    if [ $ERROR_COUNT -gt 0 ]; then
+        echo "⚠️  Warning: Found $ERROR_COUNT error(s) in green deployment logs"
+    else
+        echo "✅ No errors found in green deployment"
+    fi
+else
+    echo "⚠️  No green pods found"
+fi
+
+echo ""
+echo "Step 7: Applying service configuration..."
+echo "======================================"
+kubectl apply -f kubeservice.yaml
+
+echo ""
+echo "Step 8: Viewing all services..."
+echo "======================================"
+kubectl get services -l app=django-messaging
+
+echo ""
+echo "======================================"
+echo "Blue-Green Deployment Summary:"
+echo "======================================"
+echo "Both blue and green versions are now deployed."
+echo "Current service routing: BLUE (version: blue)"
+echo ""
+echo "To switch traffic to GREEN version, run:"
+echo "kubectl patch service django-service -p '{\"spec\":{\"selector\":{\"version\":\"green\"}}}'"
+echo ""
+echo "To switch back to BLUE version, run:"
+echo "kubectl patch service django-service -p '{\"spec\":{\"selector\":{\"version\":\"blue\"}}}'"
+echo ""
+echo "✅ Blue-Green deployment complete!"
