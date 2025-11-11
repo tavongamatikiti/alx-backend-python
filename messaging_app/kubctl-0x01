@@ -1,0 +1,85 @@
+#!/bin/bash
+# Script to scale Django app deployment and perform load testing
+
+echo "======================================"
+echo "Scaling Django Messaging App"
+echo "======================================"
+
+# Check if kubectl is available
+if ! command -v kubectl &> /dev/null; then
+    echo "❌ Error: kubectl is not installed"
+    exit 1
+fi
+
+# Scale deployment to 3 replicas
+echo "Scaling deployment to 3 replicas..."
+kubectl scale deployment django-messaging-app --replicas=3
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to scale deployment"
+    exit 1
+fi
+
+echo "✅ Deployment scaled successfully"
+echo ""
+
+# Wait for pods to be ready
+echo "Waiting for pods to be ready..."
+kubectl wait --for=condition=ready pod -l app=django-messaging --timeout=120s
+
+echo ""
+echo "======================================"
+echo "Verifying Running Pods:"
+echo "======================================"
+kubectl get pods -l app=django-messaging -o wide
+
+echo ""
+echo "======================================"
+echo "Deployment Status:"
+echo "======================================"
+kubectl get deployment django-messaging-app
+
+echo ""
+echo "======================================"
+echo "Monitoring Resource Usage:"
+echo "======================================"
+
+# Check if metrics-server is available
+if kubectl top nodes &> /dev/null; then
+    echo "Node resource usage:"
+    kubectl top nodes
+    echo ""
+    echo "Pod resource usage:"
+    kubectl top pods -l app=django-messaging
+else
+    echo "⚠️  Metrics server not available. Skipping resource monitoring."
+    echo "To enable metrics: minikube addons enable metrics-server"
+fi
+
+echo ""
+echo "======================================"
+echo "Load Testing with wrk:"
+echo "======================================"
+
+# Check if wrk is installed
+if command -v wrk &> /dev/null; then
+    # Get the service URL
+    SERVICE_URL=$(minikube service django-service --url 2>/dev/null)
+
+    if [ -z "$SERVICE_URL" ]; then
+        echo "⚠️  Could not get service URL. Skipping load test."
+        echo "Run manually: minikube service django-service --url"
+    else
+        echo "Testing service at: $SERVICE_URL"
+        echo "Running load test for 30 seconds with 4 threads and 100 connections..."
+        wrk -t4 -c100 -d30s "$SERVICE_URL/admin/"
+    fi
+else
+    echo "⚠️  wrk is not installed. Skipping load test."
+    echo "To install wrk:"
+    echo "  macOS: brew install wrk"
+    echo "  Linux: sudo apt-get install wrk"
+fi
+
+echo ""
+echo "✅ Scaling and verification complete!"
