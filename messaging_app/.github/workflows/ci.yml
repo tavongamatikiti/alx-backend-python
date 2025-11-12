@@ -1,0 +1,117 @@
+name: CI - Testing and Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: test_messaging_app
+          MYSQL_USER: test_user
+          MYSQL_PASSWORD: test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-django pytest-cov flake8
+
+    - name: Wait for MySQL
+      run: |
+        while ! mysqladmin ping -h "127.0.0.1" -P 3306 --silent; do
+          echo "Waiting for MySQL to be ready..."
+          sleep 2
+        done
+        echo "MySQL is ready!"
+
+    - name: Run Django Tests
+      env:
+        DB_NAME: test_messaging_app
+        DB_USER: test_user
+        DB_PASSWORD: test_password
+        DB_HOST: 127.0.0.1
+        DB_PORT: 3306
+        DJANGO_SETTINGS_MODULE: messaging_app.settings
+      run: |
+        python manage.py test --verbosity=2
+
+    - name: Run pytest
+      env:
+        DB_NAME: test_messaging_app
+        DB_USER: test_user
+        DB_PASSWORD: test_password
+        DB_HOST: 127.0.0.1
+        DB_PORT: 3306
+      run: |
+        pytest --verbose --junit-xml=test-results.xml
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pytest pytest-cov
+
+    - name: Lint with flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit with error if there are any linting issues
+        flake8 . --count --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run tests with coverage
+      run: |
+        pip install -r requirements.txt
+        pip install pytest-django
+        pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term
+
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: |
+          htmlcov/
+          coverage.xml
+
+    - name: Display coverage summary
+      run: |
+        cat coverage.xml || echo "Coverage report not generated"
