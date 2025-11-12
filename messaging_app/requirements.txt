@@ -7,3 +7,10 @@ PyJWT==2.10.1
 sqlparse==0.5.3
 mysqlclient==2.2.0
 python-dotenv==1.0.0
+
+# Testing dependencies
+pytest==7.4.3
+pytest-django==4.7.0
+pytest-cov==4.1.0
+flake8==6.1.0
+coverage==7.3.2
